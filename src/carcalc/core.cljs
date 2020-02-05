@@ -4,7 +4,8 @@
    [re-frame.core :as rf]
    ;; ["@material-ui/core/colors/purple" :refer [purple]]
    ;; ["@material-ui/core/colors/green" :refer [green]]
-   ["@material-ui/core" :refer [Typography Container Button Grid Icon Slider Paper ThemeProvider createMuiTheme]]
+   ["@material-ui/core" :refer [Typography Container Button Grid Icon Slider Paper ThemeProvider createMuiTheme
+                                Switch FormGroup FormControlLabel]]
    ;; [re-com.core :as rc]
    [day8.re-frame.tracing :refer-macros [fn-traced defn-traced]]))
 
@@ -19,8 +20,8 @@
 ;;; DB
 (def default-db
   {:years 6
+   :new-price 60000
    :paid 40000
-   :new 60000
    :km  20000
    :fuel 2500
    :repair 1500
@@ -41,6 +42,21 @@
  (fn-traced [db [_ years]]
    (assoc db :years years)))
 
+(rf/reg-event-db
+ ::set-new-car
+ (fn-traced [db [_ new-car?]]
+   (assoc db :years (if new-car? 6 5))))
+
+(rf/reg-event-db
+ ::set-new-price
+ (fn-traced [db [_ new-price]]
+   (assoc db :new-price new-price)))
+
+(rf/reg-event-db
+ ::set-paid
+ (fn-traced [db [_ paid]]
+   (assoc db :paid paid)))
+
 ;;; Subs
 (rf/reg-sub
  ::db
@@ -52,35 +68,64 @@
  (fn [db]
    (:years db)))
 
+(rf/reg-sub
+ ::new-car?
+ (fn [db]
+   (= (:years db) 6)))
+
+(rf/reg-sub
+ ::paid
+ (fn [_ _]
+   [(rf/subscribe [::new-car?])
+    (rf/subscribe [::db])])
+ (fn [[new-car? db] _]
+   (if new-car? (:new-price db) (:paid db))))
+
 (defn input-grid [opts]
-  (let [years @(rf/subscribe [::years])]
+  (let [{:keys [years new-price paid km fuel repair insurance]} @(rf/subscribe [::db])
+        new-car? @(rf/subscribe [::new-car?])]
     [:> Grid (into {:item true :container true :spacing 2 :align-items "center" :xs 6} opts)
      [:> Grid {:item true :xs 12}
-      [:> Typography {:gutter-bottom true} "Years"]
-      [:> Slider {:value years
-                  :min 3
-                  :max 9
-                  :on-change (fn [_event value] (rf/dispatch [::set-years value]))}]]
+      [:> FormGroup {:row true}
+       [:> FormControlLabel
+        {:label "New car?"
+         :control (reagent/as-element
+                   [:> Switch {:checked new-car? :on-change #(rf/dispatch [::set-new-car %2])}])}]]]
+
      [:> Grid {:item true :xs 12}
       [:> Typography {:gutter-bottom true} "New Price"]
-      [:> Slider {:value years
+      [:> Slider {:value new-price
                   :min 5000
                   :max 200000
-                  :on-change (fn [_event value] (rf/dispatch [::set-years value]))}]]
+                  :on-change (fn [_event value] (rf/dispatch [::set-new-price value]))}]]
+
+     (when-not new-car?
+       [:> Grid {:item true :xs 12}
+        [:> Typography {:gutter-bottom true} "Paid"]
+        [:> Slider {:value paid
+                    :min 5000
+                    :max new-price
+                    :on-change (fn [_event value] (rf/dispatch [::set-paid value]))}]])
+
      [:> Grid {:item true :xs 2}
       [:> Button {:variant "contained" :color "primary"} "foo"]]
      [:> Grid {:item true :xs 2}
-      [:> Button {:variant "contained" :color "primary"} "bar"]]]
-    ))
+      [:> Button {:variant "contained" :color "primary"} "bar"]]])
+  )
 
 (defn output-grid [opts]
-  (let [years @(rf/subscribe [::years])]
+  (let [{:keys [years new-price paid km fuel repair insurance]} @(rf/subscribe [::db])
+        ppaid @(rf/subscribe [::paid])]
     [:> Grid (into {:item true :container true :spacing 2 :align-items "center" :xs 6} opts)
      [:> Grid {:item true :xs 12}
       [:> Paper
        [:div (str "Years: " years)]]
       [:> Paper
-       [:div (str "Years: " years)]]
+       [:div (str "New Price: " new-price)]]
+      [:> Paper
+       [:div (str "Paid: " paid)]]
+      [:> Paper
+       [:div (str "PPaid: " ppaid)]]
       ]]))
 
 ;;; Views
