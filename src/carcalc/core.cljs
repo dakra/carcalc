@@ -86,19 +86,61 @@
  (fn [[new-car? db] _]
    (if new-car? (:new-price db) (:paid db))))
 
+(rf/reg-sub
+ ::write-off
+ (fn [_ _]
+   [(rf/subscribe [::db])
+    (rf/subscribe [::paid])])
+ (fn [[db paid] _]
+   (let [{:keys [years fuel repair insurance]} db
+         car (/ paid years)
+         sum (+ car fuel repair insurance)]
+     {:car car
+      :fuel fuel  ;; TODO Calc from km
+      :repair repair
+      :insurance insurance
+      :sum sum})))
+
+(rf/reg-sub
+ ::one%
+ (fn [db]
+   (* 12 (/ (:new-price db) 100))))
+
+(rf/reg-sub
+ ::pendler
+ (fn [db]
+   {:one-year (* (* (:km db) 0.3) 0.4)
+    :total (* (:years db) (* (* (:km db) 0.3) 0.4))}))
+
+(rf/reg-sub
+ ::total-off
+ (fn [_ _]
+   [(rf/subscribe [::years])
+    (rf/subscribe [::write-off])
+    (rf/subscribe [::one%])])
+ (fn [[years write-off one] _]
+   (let [{:keys [car fuel repair insurance sum]} write-off
+         total (- sum one)
+         all-total (* 5 total)]
+     {:one-year-total sum
+      :one-percent one
+      :all-total all-total})))
+
 ;;; Components
 
-(defn input-slider [key max]
-  (let [val (get @(rf/subscribe [::db]) key)
+(defn input-slider [key opts]
+  (let [defaults {:min 0 :max 100000 :step 1000 :desc (name key)}
+        {:keys [min max step desc]} (merge defaults opts)
+        val (get @(rf/subscribe [::db]) key)
         ;; useStyles (makeStyles {:root {:width 250} :input {:width 42}})
         ;; classes (useStyles)
         ]
     [:> Grid {:item true :xs 12}  ; :div ; {:class (.-root classes)}
-     [:> Typography {:id "input-slider" :gutter-bottom true} (name key)]
+     [:> Typography {:id "input-slider" :gutter-bottom true} desc]
      [:> Grid {:container true :item true :spacing 2 :align-items "center" :xs 12}
       [:> Grid {:item true :xs true}
        [:> Slider {:value val
-                   :min 0
+                   :min min
                    :max max
                    :on-change #(rf/dispatch [::set-db {key %2}])}]]
       [:> Grid {:item true :xs 2}
@@ -107,13 +149,14 @@
                   :value val
                   :on-change #(rf/dispatch [::set-db {key (-> % .-target .-value)}])
                   :input-props {:type "number"
-                                :step 1000
-                                :min 0
+                                :step step
+                                :min min
                                 :max max}}]]]]))
 
 (defn input-grid [opts]
-  (let [new-car? @(rf/subscribe [::new-car?])]
-    [:> Grid (into {:item true :container true :spacing 2 :align-items "center" :xs 6} opts)
+  (let [grid-defaults {:item true :container true :spacing 2 :align-items "center" :xs 6}
+        new-car? @(rf/subscribe [::new-car?])]
+    [:> Grid (merge grid-defaults opts)
      [:> Grid {:item true :xs 12}
       [:> FormGroup {:row true}
        [:> FormControlLabel
@@ -121,13 +164,13 @@
          :control (reagent/as-element
                    [:> Switch {:checked new-car? :on-change #(rf/dispatch [::set-new-car %2])}])}]]]
 
-     [input-slider :new-price 200000]
+     [input-slider :new-price {:min 20000 :max 100000 :name "New Car Price"}]
      (when-not new-car?
-       [input-slider :paid 200000])
-     [input-slider :km 50000]
-     [input-slider :fuel 10000]
-     [input-slider :repair 3000]
-     [input-slider :insurance 2000]
+       [input-slider :paid {:min 10000 :max 100000 :name "Price Paid"}])
+     [input-slider :km {:min 5000 :max 50000}]
+     [input-slider :fuel {:min 0 :max 5000 :step 100}]
+     [input-slider :repair {:min 0 :max 3000 :step 100}]
+     [input-slider :insurance {:min 0 :max 2000 :step 100}]
 
      [:> Grid {:item true :xs 2}
       [:> Button {:variant "contained" :color "primary"} "foo"]]
@@ -135,25 +178,64 @@
       [:> Button {:variant "contained" :color "primary"} "bar"]]])
   )
 
-(defn output-grid [opts]
+(defn paper-db []
   (let [{:keys [years new-price km fuel repair insurance]} @(rf/subscribe [::db])
         paid @(rf/subscribe [::paid])]
+    [:> Grid {:item true :xs 12}
+     [:> Typography {:variant "h5"} "Input"]
+     [:> Paper
+      [:div (str "Years: " years)]]
+     [:> Paper
+      [:div (str "New Price: " new-price)]]
+     [:> Paper
+      [:div (str "Paid: " paid)]]
+     [:> Paper
+      [:div (str "KM: " km)]]
+     [:> Paper
+      [:div (str "Fuel: " fuel)]]
+     [:> Paper
+      [:div (str "Repair: " repair)]]
+     [:> Paper
+      [:div (str "Insurance: " insurance)]]]))
+
+(defn paper-write-off []
+  (let [{:keys [car fuel repair insurance sum]} @(rf/subscribe [::write-off])
+        {:keys [one-percent all-total]} @(rf/subscribe [::total-off])]
+    [:> Grid {:item true :xs 12}
+     [:> Typography {:variant "h5"} "Write offs per year"]
+     [:> Paper
+      [:div (str "Car: " car)]]
+     [:> Paper
+      [:div (str "Fuel: " fuel)]]
+     [:> Paper
+      [:div (str "Repair: " repair)]]
+     [:> Paper
+      [:div (str "Insurance: " insurance)]]
+     [:> Paper
+      [:div (str "Total: " sum)]]
+     [:> Paper
+      [:div (str "1%: " one-percent)]]
+     [:> Paper
+      [:div (str "All Total: " all-total)]]]))
+
+(defn paper-pendler []
+  (let [{:keys [one-year total]} @(rf/subscribe [::pendler])]
+    [:> Grid {:item true :xs 12}
+     [:> Typography {:variant "h5"} "Pendlerpauschale"]
+     [:> Paper
+      [:div (str "Pendler / Jahr: " one-year)]]
+     [:> Paper
+      [:div (str "Pendler Total: " total)]]]))
+
+(defn output-grid [opts]
+  (let []
     [:> Grid (into {:item true :container true :spacing 2 :align-items "center" :xs 6} opts)
-     [:> Grid {:item true :xs 12}
-      [:> Paper
-       [:div (str "Years: " years)]]
-      [:> Paper
-       [:div (str "New Price: " new-price)]]
-      [:> Paper
-       [:div (str "Paid: " paid)]]
-      [:> Paper
-       [:div (str "KM: " km)]]
-      [:> Paper
-       [:div (str "Fuel: " fuel)]]
-      [:> Paper
-       [:div (str "Repair: " repair)]]
-      [:> Paper
-       [:div (str "Incurance: " insurance)]]]]))
+
+     [paper-db]
+
+     [paper-write-off]
+
+     [paper-pendler]]))
 
 ;;; Views
 (defn main-shell []
